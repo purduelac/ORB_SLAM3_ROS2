@@ -1,6 +1,8 @@
 #include "stereo-inertial-node.hpp"
 
 #include <opencv2/core/core.hpp>
+#include <sophus/se3.hpp>
+
 
 using std::placeholders::_1;
 
@@ -60,6 +62,8 @@ StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &st
     subImu_ = this->create_subscription<ImuMsg>("imu", 1000, std::bind(&StereoInertialNode::GrabImu, this, _1));
     subImgLeft_ = this->create_subscription<ImageMsg>("camera/left", 100, std::bind(&StereoInertialNode::GrabImageLeft, this, _1));
     subImgRight_ = this->create_subscription<ImageMsg>("camera/right", 100, std::bind(&StereoInertialNode::GrabImageRight, this, _1));
+
+    posePub_ = this->create_publisher<PoseStamped>("orbslam/pose", 10);
 
     syncThread_ = new std::thread(&StereoInertialNode::SyncWithImu, this);
 }
@@ -141,6 +145,8 @@ void StereoInertialNode::SyncWithImu()
         double tImLeft = 0, tImRight = 0;
         if (!imgLeftBuf_.empty() && !imgRightBuf_.empty() && !imuBuf_.empty())
         {
+            std::cout << "idk" << std::endl;
+
             tImLeft = Utility::StampToSec(imgLeftBuf_.front()->header.stamp);
             tImRight = Utility::StampToSec(imgRightBuf_.front()->header.stamp);
 
@@ -207,10 +213,31 @@ void StereoInertialNode::SyncWithImu()
                 cv::remap(imRight, imRight, M1r_, M2r_, cv::INTER_LINEAR);
             }
 
-            SLAM_->TrackStereo(imLeft, imRight, tImLeft, vImuMeas);
+            Sophus::SE3f pose = SLAM_->TrackStereo(imLeft, imRight, tImLeft, vImuMeas);
+            this->publishPose(pose, tImLeft);
 
             std::chrono::milliseconds tSleep(1);
             std::this_thread::sleep_for(tSleep);
         }
     }
+}
+
+void StereoInertialNode::publishPose(const Sophus::SE3f &pose, double timestamp) {
+    geometry_msgs::msg::PoseStamped pose_msg;
+    pose_msg.header.stamp.sec = static_cast<int>(timestamp);
+    pose_msg.header.stamp.nanosec = static_cast<int>((timestamp - pose_msg.header.stamp.sec) * 1e9);
+    pose_msg.header.frame_id = "map";
+    
+    Eigen::Quaternionf q = pose.unit_quaternion();
+    Eigen::Vector3f t = pose.translation();
+    
+    pose_msg.pose.position.x = t.x();
+    pose_msg.pose.position.y = t.y();
+    pose_msg.pose.position.z = t.z();
+    pose_msg.pose.orientation.x = q.x();
+    pose_msg.pose.orientation.y = q.y();
+    pose_msg.pose.orientation.z = q.z();
+    pose_msg.pose.orientation.w = q.w();
+    
+    posePub_->publish(pose_msg);
 }

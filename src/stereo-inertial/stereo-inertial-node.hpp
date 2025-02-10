@@ -4,18 +4,22 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/imu.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 #include <cv_bridge/cv_bridge.h>
 
 #include "System.h"
+#include "Converter.h"
 #include "Frame.h"
 #include "Map.h"
 #include "Tracking.h"
+#include <sophus/se3.hpp>
 
 #include "utility.hpp"
 
 using ImuMsg = sensor_msgs::msg::Imu;
 using ImageMsg = sensor_msgs::msg::Image;
+using PoseStamped = geometry_msgs::msg::PoseStamped;
 
 class StereoInertialNode : public rclcpp::Node
 {
@@ -29,10 +33,13 @@ private:
     void GrabImageRight(const ImageMsg::SharedPtr msgRight);
     cv::Mat GetImage(const ImageMsg::SharedPtr msg);
     void SyncWithImu();
+    void publishPose(const Sophus::SE3f &pose, double timestamp);
 
     rclcpp::Subscription<ImuMsg>::SharedPtr   subImu_;
     rclcpp::Subscription<ImageMsg>::SharedPtr subImgLeft_;
     rclcpp::Subscription<ImageMsg>::SharedPtr subImgRight_;
+
+    rclcpp::Publisher<PoseStamped>::SharedPtr posePub_;
 
     ORB_SLAM3::System *SLAM_;
     std::thread *syncThread_;
